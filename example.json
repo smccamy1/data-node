@@ -1,0 +1,86 @@
+[
+    {
+        "id": "01ab05cf51c56124",
+        "type": "inject",
+        "z": "f12190cb17ebb018",
+        "name": "",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "{\"node5\":\"node 5\"}",
+        "payloadType": "json",
+        "x": 130,
+        "y": 880,
+        "wires": [
+            [
+                "3985396e999b6586"
+            ]
+        ]
+    },
+    {
+        "id": "3985396e999b6586",
+        "type": "change",
+        "z": "f12190cb17ebb018",
+        "name": "",
+        "rules": [
+            {
+                "t": "set",
+                "p": "payload",
+                "pt": "msg",
+                "to": "{\t   \"nodes\":$append(\t       $flowContext(\"payload\").nodes,\t       payload\t   ),\t   \"links\":$flowContext(\"payload\").links\t}",
+                "tot": "jsonata"
+            }
+        ],
+        "action": "",
+        "property": "",
+        "from": "",
+        "to": "",
+        "reg": false,
+        "x": 320,
+        "y": 880,
+        "wires": [
+            [
+                "a59f6a24eb2de4b0"
+            ]
+        ]
+    },
+    {
+        "id": "a59f6a24eb2de4b0",
+        "type": "change",
+        "z": "f12190cb17ebb018",
+        "name": "",
+        "rules": [
+            {
+                "t": "set",
+                "p": "payload",
+                "pt": "flow",
+                "to": "payload",
+                "tot": "msg"
+            }
+        ],
+        "action": "",
+        "property": "",
+        "from": "",
+        "to": "",
+        "reg": false,
+        "x": 560,
+        "y": 880,
+        "wires": [
+            [
+                "87c1360a8bcde419",
+                "e525710627a3636d"
+            ]
+        ]
+    }
+]
