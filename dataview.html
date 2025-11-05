@@ -1,0 +1,1041 @@
+<script type="text/javascript">
+    (function () {
+
+        const DEFAULT_CHART_WIDTH = 200;
+        const DEFAULT_CHART_HEIGHT = 160;
+        const DEFAULT_CHART_POINTS = 10;
+
+        const LINE_STYLE = {
+            stroke: 'steelblue',
+            'stroke-width': 2,
+            fill: 'none'
+        }
+
+        const AXIS_STYLE = {
+            fill: 'none',
+            stroke: 'grey',
+            'stroke-width': 1,
+            'shape-rendering': 'crispEdges'
+        };
+
+        const CHART_MARGINS = {
+            left: 30,
+            right: 10,
+            bottom: 30,
+            top: 15
+        };
+
+        RED.nodes.registerType('ccp-data-view', {
+            category: 'output',
+            color: '#88A882',
+            defaults: {
+                name: { value: "" },
+                property: {
+                    value: "payload",
+                    required: true,
+                    validate: RED.validators.typedInput("fieldType")
+                },
+                fieldType: {value:"msg"},
+                width: {
+                    value: DEFAULT_CHART_WIDTH,
+                    required: true,
+                    validate: function (v) { return !v || !isNaN(parseInt(v, 10)) }
+                },
+                height: {
+                    value: DEFAULT_CHART_HEIGHT,
+                    required: true,
+                    validate: function (v) { return !v || !isNaN(parseInt(v, 10)) }
+                },
+                points: {
+                    value: DEFAULT_CHART_POINTS,
+                    required: true,
+                    validate: function (v) { return !v || !isNaN(parseInt(v, 10)) }
+                },
+                active: { value: true },
+                passthru: { value: false },
+                hide: {value: true},
+                fillColor: { value: "#a4d1ed" },
+                strokeColor: { value: "#999999" },
+                chartType: { value: "line" },
+                outputs: { value: 0 }
+            },
+            inputs: 1,
+            outputs: 0,
+            icon: "font-awesome/fa-line-chart",
+            align: 'right',
+            label: function () {
+                return this.name || 'msg.'+this.property;
+            },
+            labelStyle: function () {
+                return this.name ? "node_label_italic" : "";
+            },
+            button: {
+                toggle: "active",
+                visible: function () { return !this.passthru; },
+                onclick: function () {
+                    const label = this.name || "data view";
+                    var node = this;
+                    $.ajax({
+                        url: `ccp-data-view/${this.id}/${this.active ? 'enable' : 'disable'}`,
+                        type: "POST",
+                        success: function (resp, textStatus, xhr) {
+                            const historyEvent = {
+                                t: 'edit',
+                                node: node,
+                                changes: {
+                                    active: !node.active
+                                },
+                                dirty: node.dirty,
+                                changed: node.changed
+                            };
+                            node.changed = true;
+                            node.dirty = true;
+                            RED.nodes.dirty(true);
+                            RED.history.push(historyEvent);
+                            RED.view.redraw();
+                            redraw(node);
+                            if (xhr.status == 200) {
+                                RED.notify("Successfully " + resp + ": " + label, "success");
+                            }
+                        },
+                        error: function (jqXHR, textStatus, errorThrown) {
+                            var message;
+
+                            switch (jqXHR.status) {
+                                case 404:
+                                    message = "node not deployed";
+                                    break;
+                                case 0:
+                                    message = "no response from server";
+                                    break;
+                                default:
+                                    message = `unexpected error (${textStatus}) ${errorThrown}`;
+                            }
+
+                            RED.notify(`<strong>Error</strong>: ${message}`, "error");
+                        }
+                    });
+                }
+            },
+            oneditprepare: function () {
+                var that = this;
+                $('#node-input-property').typedInput({
+                    default: 'msg',
+                    typeField: $("#node-input-fieldType"),
+                    types: ['msg']
+                });
+                $('#node-input-property').typedInput('value', this.property || 'payload');
+
+                if ($("#node-input-passthru").is(":checked")) { that.outputs = 1; }
+                $("#node-input-passthru").change(function () {
+                    if ($("#node-input-passthru").is(":checked")) {
+                        that.outputs = 1;
+                        that.active = true;
+                    }
+                    else {
+                        that.outputs = 0;
+                    }
+                });
+            }
+        });
+
+        // Register the new graph view node
+        RED.nodes.registerType('ccp-graph-view', {
+            category: 'output',
+            color: '#A882A8',
+            defaults: {
+                name: { value: "" },
+                property: {
+                    value: "payload",
+                    required: true,
+                    validate: RED.validators.typedInput("fieldType")
+                },
+                fieldType: {value:"msg"},
+                width: {
+                    value: DEFAULT_CHART_WIDTH,
+                    required: true,
+                    validate: function (v) { return !v || !isNaN(parseInt(v, 10)) }
+                },
+                height: {
+                    value: DEFAULT_CHART_HEIGHT,
+                    required: true,
+                    validate: function (v) { return !v || !isNaN(parseInt(v, 10)) }
+                },
+                active: { value: true },
+                passthru: { value: false },
+                hide: {value: true},
+                fillColor: { value: "#a4d1ed" },
+                strokeColor: { value: "#999999" },
+                multiConnectColor: { value: "#ff6b6b" },
+                backgroundColor: { value: "#ffffff" },
+                outputs: { value: 0 }
+            },
+            inputs: 1,
+            outputs: 0,
+            icon: "font-awesome/fa-share-alt",
+            align: 'right',
+            label: function () {
+                return this.name || 'graph-'+this.property;
+            },
+            labelStyle: function () {
+                return this.name ? "node_label_italic" : "";
+            },
+            button: {
+                toggle: "active",
+                visible: function () { return !this.passthru; },
+                onclick: function () {
+                    const label = this.name || "graph view";
+                    var node = this;
+                    $.ajax({
+                        url: `ccp-graph-view/${this.id}/${this.active ? 'enable' : 'disable'}`,
+                        type: "POST",
+                        success: function (resp, textStatus, xhr) {
+                            const historyEvent = {
+                                t: 'edit',
+                                node: node,
+                                changes: {
+                                    active: !node.active
+                                },
+                                dirty: node.dirty,
+                                changed: node.changed
+                            };
+                            node.changed = true;
+                            node.dirty = true;
+                            RED.nodes.dirty(true);
+                            RED.history.push(historyEvent);
+                            RED.view.redraw();
+                            redrawGraph(node);
+                            if (xhr.status == 200) {
+                                RED.notify("Successfully " + resp + ": " + label, "success");
+                            }
+                        },
+                        error: function (jqXHR, textStatus, errorThrown) {
+                            var message;
+
+                            switch (jqXHR.status) {
+                                case 404:
+                                    message = "node not deployed";
+                                    break;
+                                case 0:
+                                    message = "no response from server";
+                                    break;
+                                default:
+                                    message = `unexpected error (${textStatus}) ${errorThrown}`;
+                            }
+
+                            RED.notify(`<strong>Error</strong>: ${message}`, "error");
+                        }
+                    });
+                }
+            },
+            oneditprepare: function () {
+                var that = this;
+                $('#node-input-property').typedInput({
+                    default: 'msg',
+                    typeField: $("#node-input-fieldType"),
+                    types: ['msg']
+                });
+                $('#node-input-property').typedInput('value', this.property || 'payload');
+
+                if ($("#node-input-passthru").is(":checked")) { that.outputs = 1; }
+                $("#node-input-passthru").change(function () {
+                    if ($("#node-input-passthru").is(":checked")) {
+                        that.outputs = 1;
+                        that.active = true;
+                    }
+                    else {
+                        that.outputs = 0;
+                    }
+                });
+            }
+        });
+
+        // array of all data for each node
+        const latestData = {};
+        // ui state and functions for updates
+        const chartInfo = {};
+
+        // Graph data storage for ccp-graph-view nodes
+        const graphData = {};
+        const graphInfo = {};
+
+        var remove = function(id) {
+            const $chart = document.getElementById(`data-view-output-chart-${id}`);
+            const $bubble = document.getElementById(`data-view-output-bubble-${id}`);
+            const $reset = document.getElementById(`data-view-output-reset-${id}`);
+
+            $chart && $chart.remove();
+            $bubble && $bubble.remove();
+            $reset && $reset.remove();
+        }
+
+        var removeGraph = function(id) {
+            const $graph = document.getElementById(`graph-view-output-graph-${id}`);
+            const $bubble = document.getElementById(`graph-view-output-bubble-${id}`);
+            const $background = document.getElementById(`graph-view-output-background-${id}`);
+            const $reset = document.getElementById(`graph-view-output-reset-${id}`);
+
+            $graph && $graph.remove();
+            $bubble && $bubble.remove();
+            $background && $background.remove();
+            $reset && $reset.remove();
+        }
+
+        var reset = function (id) {
+            remove(id)
+            delete latestData[id];
+            delete chartInfo[id];
+        }
+
+        var redraw = function (node) {
+            let id = node.id
+            remove(id);
+            if (latestData[id] && (node.active || !node.hide)) {
+                render(id, latestData[id], node);
+            }
+        }
+
+        var render = function (id, data, node) {
+            let $chart = document.getElementById("data-view-output-chart-" + id);
+            let chartWidth = node.width ? parseInt(node.width) : DEFAULT_CHART_WIDTH;
+            let chartHeight = node.height ? parseInt(node.height) : DEFAULT_CHART_HEIGHT;
+
+            if (!$chart) {
+                const $container = document.getElementById(id)
+                if (!$container) { return }
+
+                // create the chart bubble
+                const bubble = document.createElementNS("http://www.w3.org/2000/svg", 'polyline')
+                bubble.setAttribute('id', `data-view-output-bubble-${id}`)
+                bubble.setAttribute('style', `fill:${node.fillColor || '#a4d1ed'}`)
+                bubble.setAttribute('stroke', node.strokeColor || '#999999')
+
+                chartBB = {
+                    x: 0,
+                    y: 45,
+                    width: chartWidth,
+                    height: chartHeight
+                }
+
+                const left = chartBB.x;
+                const top = chartBB.y + 2;
+                const right = chartBB.x + chartBB.width;
+                const bottom = chartBB.y + chartBB.height;
+
+                const points =
+                    `${left + 4},${top - 17} ${left + 4},${top} ` +
+                    `${right},${top} ${right},${bottom} ` +
+                    `${left},${bottom} ${left},${top - 21}`;
+
+                bubble.setAttribute('points', points)
+                $container.insertBefore(bubble, $container.lastChild.nextSibling);
+
+                // add a group to hold the d3 chart
+                const chartGroup = document.createElementNS("http://www.w3.org/2000/svg", 'g');
+                chartGroup.setAttribute('id', `data-view-output-chart-${id}`);
+                $container.insertBefore(chartGroup, $container.lastChild.nextSibling);
+
+                let margin = CHART_MARGINS;
+
+                // add a button to reset chart
+                const resetGroup = document.createElementNS("http://www.w3.org/2000/svg", 'g');
+                resetGroup.setAttribute('id', `data-view-output-reset-${id}`);
+                $container.insertBefore(resetGroup, $container.lastChild.nextSibling);
+
+                let d3Reset = d3.select(resetGroup)
+                    .attr('class','delete')
+                    .attr('transform', `translate(${chartWidth-margin.right-10},70)`)
+                    .on('click', () => {
+                        reset(id);
+                    });
+                d3Reset.append('text').style({
+                    'font-family':'FontAwesome',
+                    'font-weight': 'normal',
+                    'font-size':'14px',
+                    'fill':'#999',
+                    'stroke':'none'}).text('\uf1f8');
+
+                let height = chartHeight - margin.top - margin.bottom;
+
+                // chart group
+                let d3chart = d3.select(chartGroup);
+                let yScale = d3.scale.linear().range([height, 0]);
+                let yAxis = d3.svg.axis().scale(yScale).orient("left").ticks(5);
+                yScale.domain([d3.min(data, d => d.value), d3.max(data, d => d.value)]);
+
+                let yAxisElement = d3chart.append("g")
+                    .attr("class", "y axis")
+                    .call(yAxis);
+                
+                let axisWidth = yAxisElement.node().getBBox().width;
+                let leftMargin = Math.max(margin.left, axisWidth+4);
+                let width = chartWidth - leftMargin - margin.right;
+
+                d3chart.attr("transform", `translate(${leftMargin},${45 + margin.top})`);
+
+                let xScale = d3.time.scale().range([0, width]);
+                let xAxis = d3.svg.axis().scale(xScale).orient("bottom").ticks(3);
+
+                let valueLine = d3.svg.line()
+                    .x(function (d) {
+                        return xScale(d.time);
+                    })
+                    .y(function (d) {
+                        return yScale(d.value);
+                    });
+
+                xScale.domain(d3.extent(data, d => d.time));
+
+                // Render chart based on type
+                if (node.chartType === "bar") {
+                    // Bar chart rendering
+                    let barWidth = width / data.length * 0.8;
+                    
+                    d3chart.selectAll(".bar")
+                        .data(data)
+                        .enter().append("rect")
+                        .attr("class", "bar")
+                        .attr("x", function(d) { return xScale(d.time) - barWidth/2; })
+                        .attr("width", barWidth)
+                        .attr("y", function(d) { return yScale(d.value); })
+                        .attr("height", function(d) { return height - yScale(d.value); })
+                        .style("fill", node.fillColor || '#a4d1ed')
+                        .style("stroke", node.strokeColor || '#999999');
+                } else {
+                    // Line chart rendering (default)
+                    d3chart.append("path")
+                        .attr("class", "chart-line")
+                        .style(LINE_STYLE)
+                        .attr("d", valueLine(data));
+                }
+
+                d3chart.append("g")
+                    .attr("class", "x axis")
+                    .attr("transform", `translate( 0, ${height})`)
+                    .call(xAxis);
+
+                d3chart.selectAll(".axis line")
+                    .style(AXIS_STYLE);
+
+                d3chart.selectAll(".axis path")
+                    .style(AXIS_STYLE);
+
+                $chart = chartGroup
+
+                // save for updates to the chart
+                chartInfo[id] = { xScale, yScale, xAxis, yAxis, valueLine, width };
+            } else {
+                // updating chart
+                let d3chart = d3.select($chart).transition();
+                let { xScale, yScale, xAxis, yAxis, valueLine, width } = chartInfo[id];
+
+                xScale.domain(d3.extent(data, d => d.time));
+                yScale.domain([d3.min(data, d => d.value), d3.max(data, d => d.value)]);
+
+                let yAxisElement = d3chart.select(".y.axis") // change the y axis
+                    .duration(200)
+                    .call(yAxis);
+
+                let margin = CHART_MARGINS;
+                let height = chartHeight - margin.top - margin.bottom;
+
+                // get the width of the y-axis in case we need room
+                let axisWidth = yAxisElement.node().getBBox().width;
+                let leftMargin = Math.max(margin.left, axisWidth+4);
+                let newWidth = chartWidth - leftMargin - margin.right;
+
+                if (newWidth != width) {
+                    // adjust scaling to new width
+                    xScale.range([0, newWidth]);
+                    valueLine.x(function (d) {
+                        return xScale(d.time);
+                    });
+
+                    // move chart over for room
+                    d3chart.attr("transform", `translate(${leftMargin},${45 + margin.top})`);
+                    chartInfo[id].width = newWidth;
+                }
+
+                // Update chart based on type
+                if (node && node.chartType === "bar") {
+                    // Update bar chart
+                    let barWidth = newWidth / data.length * 0.8;
+                    
+                    let bars = d3.select($chart).selectAll(".bar")
+                        .data(data);
+                    
+                    bars.enter().append("rect")
+                        .attr("class", "bar");
+                    
+                    bars.transition()
+                        .duration(200)
+                        .attr("x", function(d) { return xScale(d.time) - barWidth/2; })
+                        .attr("width", barWidth)
+                        .attr("y", function(d) { return yScale(d.value); })
+                        .attr("height", function(d) { return height - yScale(d.value); })
+                        .style("fill", node.fillColor || '#a4d1ed')
+                        .style("stroke", node.strokeColor || '#999999');
+                    
+                    bars.exit().remove();
+                } else {
+                    // Update line chart (default)
+                    d3chart.select(".chart-line")
+                        .duration(200)
+                        .attr("d", valueLine(data));
+                }
+
+                d3chart.select(".x.axis")
+                    .duration(200)
+                    .call(xAxis);
+            }
+        }
+
+        // Graph rendering function for ccp-graph-view
+        var renderGraph = function (id, data, node) {
+            console.log('renderGraph called with id:', id, 'data:', data, 'node:', node);
+            let $graph = document.getElementById("graph-view-output-graph-" + id);
+            let graphWidth = node.width ? parseInt(node.width) : DEFAULT_CHART_WIDTH;
+            let graphHeight = node.height ? parseInt(node.height) : DEFAULT_CHART_HEIGHT;
+
+            // Define updateGraph function outside of the creation block so it's always available
+            let force, linkGroup, nodeGroup, previousNodeData = [], previousLinkData = [];
+
+            function updateGraph(graphData) {
+                console.log('updateGraph called with:', graphData);
+                if (!graphData) {
+                    console.log('No graph data provided');
+                    return;
+                }
+                
+                // Handle empty data (for clearing the graph)
+                const nodeData = graphData.nodes || [];
+                const linkData = graphData.links || [];
+                
+                console.log('Node data:', nodeData);
+                console.log('Link data:', linkData);
+
+                // If no data, clear the graph
+                if (nodeData.length === 0 && linkData.length === 0) {
+                    if (linkGroup) linkGroup.selectAll(".link").remove();
+                    if (nodeGroup) nodeGroup.selectAll(".node").remove();
+                    console.log('Cleared graph - no data');
+                    return;
+                }
+
+                // Create node and link maps for efficient lookups
+                const nodeMap = new Map();
+                const linkMap = new Map();
+                
+                nodeData.forEach((node, index) => {
+                    const key = node.id || index;
+                    nodeMap.set(key, { ...node, index });
+                });
+                
+                linkData.forEach((link, index) => {
+                    const key = `${link.source}-${link.target}`;
+                    linkMap.set(key, link);
+                });
+
+                // Create previous data maps for comparison
+                const prevNodeMap = new Map();
+                const prevLinkMap = new Map();
+                
+                previousNodeData.forEach((node, index) => {
+                    const key = node.id || index;
+                    prevNodeMap.set(key, node);
+                });
+                
+                previousLinkData.forEach((link, index) => {
+                    const key = `${link.source}-${link.target}`;
+                    prevLinkMap.set(key, link);
+                });
+
+                // Count connections for each node
+                let connectionCounts = {};
+                nodeData.forEach((node, index) => {
+                    connectionCounts[index] = 0;
+                });
+
+                // Count connections from links
+                linkData.forEach(link => {
+                    const sourceIndex = typeof link.source === 'object' ? link.source.index : link.source;
+                    const targetIndex = typeof link.target === 'object' ? link.target.index : link.target;
+                    
+                    if (connectionCounts.hasOwnProperty(sourceIndex)) {
+                        connectionCounts[sourceIndex]++;
+                    }
+                    if (connectionCounts.hasOwnProperty(targetIndex)) {
+                        connectionCounts[targetIndex]++;
+                    }
+                });
+
+                // Preserve existing node positions for unchanged nodes
+                nodeData.forEach((newNode, index) => {
+                    const key = newNode.id || index;
+                    const prevNode = prevNodeMap.get(key);
+                    if (prevNode && prevNode.x !== undefined && prevNode.y !== undefined) {
+                        newNode.x = prevNode.x;
+                        newNode.y = prevNode.y;
+                        newNode.px = prevNode.px;
+                        newNode.py = prevNode.py;
+                        // Make existing nodes fixed to prevent unwanted movement
+                        newNode.fixed = true;
+                    }
+                });
+
+                if (force) {
+                    force.nodes(nodeData).links(linkData);
+
+                    // Update links with key function for stable tracking
+                    let links = linkGroup.selectAll(".link")
+                        .data(linkData, function(d) { 
+                            return `${d.source}-${d.target}`; 
+                        });
+
+                    // Only add new links
+                    links.enter().append("line")
+                        .attr("class", "link")
+                        .style("stroke", node.strokeColor || '#999999')
+                        .style("stroke-width", 2)
+                        .style("opacity", 0)
+                        .transition()
+                        .duration(300)
+                        .style("opacity", 1);
+
+                    // Remove old links with transition
+                    links.exit()
+                        .transition()
+                        .duration(300)
+                        .style("opacity", 0)
+                        .remove();
+
+                    // Update nodes with key function for stable tracking
+                    let nodes = nodeGroup.selectAll(".node")
+                        .data(nodeData, function(d, i) { 
+                            return d.id || i; 
+                        });
+
+                    // Only add new nodes
+                    let newNodes = nodes.enter().append("circle")
+                        .attr("class", "node")
+                        .attr("r", 0)
+                        .style("stroke", node.strokeColor || '#999999')
+                        .style("stroke-width", 2)
+                        .style("opacity", 0)
+                        .call(force.drag)
+                        .on('mousedown', function(d) {
+                            // When dragging starts, unfix the node to allow manual positioning
+                            d.fixed = false;
+                        })
+                        .on('dragstart', function(d) {
+                            // Prevent force layout from moving this node during drag
+                            d3.event.sourceEvent.stopPropagation();
+                            d.fixed = true;
+                        })
+                        .on('dragend', function(d) {
+                            // Keep the node fixed after dragging ends
+                            d.fixed = true;
+                        });
+
+                    // Animate new nodes in
+                    newNodes.transition()
+                        .duration(300)
+                        .attr("r", 8)
+                        .style("opacity", 1)
+                        .each('end', function(d) {
+                            // After animation, allow new nodes to settle briefly, then fix them
+                            setTimeout(() => {
+                                d.fixed = true;
+                            }, 1000);
+                        });
+
+                    // Update all nodes (both new and existing) with connection-based colors
+                    nodeGroup.selectAll(".node")
+                        .style("fill", function(d, i) {
+                            const key = d.id || i;
+                            const nodeIndex = nodeData.findIndex(n => (n.id || nodeData.indexOf(n)) === key);
+                            const connections = connectionCounts[nodeIndex] || 0;
+                            return connections > 1 ? 
+                                (node.multiConnectColor || '#ff6b6b') : 
+                                (node.fillColor || '#a4d1ed');
+                        });
+
+                    // Remove old nodes with transition
+                    nodes.exit()
+                        .transition()
+                        .duration(300)
+                        .attr("r", 0)
+                        .style("opacity", 0)
+                        .remove();
+
+                    // Update previous data for next comparison
+                    previousNodeData = nodeData.map(node => ({ ...node }));
+                    previousLinkData = linkData.map(link => ({ ...link }));
+
+                    // Only restart force if there are new nodes or links
+                    const hasNewNodes = nodeData.some((node, i) => {
+                        const key = node.id || i;
+                        return !prevNodeMap.has(key);
+                    });
+                    
+                    const hasNewLinks = linkData.some((link, i) => {
+                        const key = `${link.source}-${link.target}`;
+                        return !prevLinkMap.has(key);
+                    });
+
+                    if (hasNewNodes || hasNewLinks) {
+                        // Temporarily unfix new nodes to allow them to find good positions
+                        nodeData.forEach((d, i) => {
+                            const key = d.id || i;
+                            if (!prevNodeMap.has(key)) {
+                                d.fixed = false;
+                            }
+                        });
+                        
+                        force.start();
+                        console.log('Force layout restarted for new elements');
+                        
+                        // After a short time, fix the new nodes too
+                        setTimeout(() => {
+                            nodeData.forEach(d => {
+                                d.fixed = true;
+                            });
+                            force.stop();
+                        }, 2000);
+                    } else {
+                        console.log('No new elements, skipping force restart');
+                    }
+                }
+            }
+
+            if (!$graph) {
+                console.log('Creating new graph for id:', id);
+                const $container = document.getElementById(id)
+                if (!$container) { 
+                    console.log('Container not found for id:', id);
+                    return 
+                }
+
+                // create the graph bubble
+                const bubble = document.createElementNS("http://www.w3.org/2000/svg", 'polyline')
+                bubble.setAttribute('id', `graph-view-output-bubble-${id}`)
+                bubble.setAttribute('style', 'fill:rgba(255,255,255,0.1)')
+                bubble.setAttribute('stroke', node.strokeColor || '#999999')
+
+                // create background rectangle for the graph area
+                const backgroundRect = document.createElementNS("http://www.w3.org/2000/svg", 'rect')
+                backgroundRect.setAttribute('id', `graph-view-output-background-${id}`)
+                backgroundRect.setAttribute('x', 15)
+                backgroundRect.setAttribute('y', 60)
+                backgroundRect.setAttribute('width', graphWidth - 30)
+                backgroundRect.setAttribute('height', graphHeight - 30)
+                backgroundRect.setAttribute('fill', node.backgroundColor || '#ffffff')
+                backgroundRect.setAttribute('stroke', 'none')
+
+                const chartBB = {
+                    x: 0,
+                    y: 45,
+                    width: graphWidth,
+                    height: graphHeight
+                }
+
+                const left = chartBB.x;
+                const right = left + chartBB.width;
+                const top = chartBB.y;
+                const bottom = top + chartBB.height;
+
+                const points = 
+                    `${left + 10},${bottom} ${left + 10},${top + 10} ${right - 10},${top + 10} ${right - 10},${bottom} ` +
+                    `${left},${bottom} ${left},${top - 21}`;
+
+                bubble.setAttribute('points', points)
+                $container.insertBefore(backgroundRect, $container.lastChild.nextSibling);
+                $container.insertBefore(bubble, $container.lastChild.nextSibling);
+
+                // add a group to hold the d3 graph
+                const graphGroup = document.createElementNS("http://www.w3.org/2000/svg", 'g');
+                graphGroup.setAttribute('id', `graph-view-output-graph-${id}`);
+                $container.insertBefore(graphGroup, $container.lastChild.nextSibling);
+
+                // add a button to reset graph
+                const resetGroup = document.createElementNS("http://www.w3.org/2000/svg", 'g');
+                resetGroup.setAttribute('id', `graph-view-output-reset-${id}`);
+                $container.insertBefore(resetGroup, $container.lastChild.nextSibling);
+
+                let d3Reset = d3.select(resetGroup)
+                    .attr('class','delete')
+                    .attr('transform', `translate(${graphWidth-10},70)`)
+                    .on('click', () => {
+                        resetGraph(id);
+                    });
+                d3Reset.append('text').style({
+                    'font-family':'FontAwesome',
+                    'font-weight': 'normal',
+                    'font-size':'14px',
+                    'fill':'#999',
+                    'stroke':'none'}).text('\uf1f8');
+
+                // Initialize force layout
+                let d3graph = d3.select(graphGroup);
+                d3graph.attr("transform", `translate(15, 60)`);
+
+                force = d3.layout.force()
+                    .size([graphWidth - 30, graphHeight - 30])
+                    .charge(-300)
+                    .linkDistance(50)
+                    .on("tick", tick);
+
+                // Create link and node groups
+                linkGroup = d3graph.append("g").attr("class", "links");
+                nodeGroup = d3graph.append("g").attr("class", "nodes");
+
+                function tick() {
+                    linkGroup.selectAll(".link")
+                        .attr("x1", function(d) { return d.source.x; })
+                        .attr("y1", function(d) { return d.source.y; })
+                        .attr("x2", function(d) { return d.target.x; })
+                        .attr("y2", function(d) { return d.target.y; });
+
+                    nodeGroup.selectAll(".node")
+                        .attr("cx", function(d) { return d.x; })
+                        .attr("cy", function(d) { return d.y; });
+                }
+
+                $graph = graphGroup;
+                graphInfo[id] = { force, updateGraph, linkGroup, nodeGroup };
+                console.log('Graph info stored for id:', id);
+
+                // Update the graph with initial data
+                if (data) {
+                    updateGraph(data);
+                }
+            } else {
+                // updating existing graph
+                console.log('Updating existing graph with id:', id);
+                if (graphInfo[id] && graphInfo[id].updateGraph) {
+                    console.log('Calling updateGraph for existing graph');
+                    graphInfo[id].updateGraph(data);
+                } else {
+                    console.log('No updateGraph function found for id:', id);
+                }
+            }
+        }
+
+        var resetGraph = function(id) {
+            removeGraph(id);
+            delete graphData[id];
+            delete graphInfo[id];
+        }
+
+        var redrawGraph = function(node) {
+            let id = node.id;
+            removeGraph(id);
+            if (graphData[id] && (node.active || !node.hide)) {
+                renderGraph(id, graphData[id], node);
+            }
+        }
+
+        RED.events.on("editor:save", redraw)
+
+        RED.comms.subscribe('data-view', function (event, data) {
+
+            if (data.hasOwnProperty("data")) {
+                // add new element to latestData
+                let node = RED.nodes.node(data.id);
+                let numPoints = node.points ? parseInt(node.points) : DEFAULT_CHART_POINTS;
+
+                if (!latestData[data.id]) {
+                    latestData[data.id] = [];
+                }
+                data.data.time = new Date(data.data.time);
+                latestData[data.id].push(data.data);
+                if (latestData[data.id].length > numPoints) {
+                    latestData[data.id].shift();
+                }
+                render(data.id, latestData[data.id], node)
+            }
+            else {
+                reset(data.id);
+            }
+        })
+
+        // Subscribe to graph-view data
+        RED.comms.subscribe('graph-view', function (event, data) {
+            console.log('Graph view data received:', data);
+            if (data.hasOwnProperty("data")) {
+                let node = RED.nodes.node(data.id);
+                if (!node) {
+                    console.log('Node not found:', data.id);
+                    return;
+                }
+
+                if (data.data && data.data.nodes) {
+                    console.log('Valid graph data, rendering:', data.data);
+                    graphData[data.id] = data.data;
+                    renderGraph(data.id, data.data, node);
+                } else {
+                    console.log('Invalid graph data structure, resetting');
+                    resetGraph(data.id);
+                }
+            } else {
+                console.log('No data property, resetting graph');
+                resetGraph(data.id);
+            }
+        })
+    })();
+</script>
+
+<script type="text/html" data-template-name="ccp-data-view">
+    <div class="form-row">
+        <label style="padding-top: 8px" for="node-input-property"><i class="fa fa-ellipsis-h"></i> Property</label>
+        <input type="text" id="node-input-property" style="width:70%">
+        <input type="hidden" id="node-input-fieldType">
+    </div>
+    <div class="form-row">
+        <label for="node-input-height"><i class="fa fa-arrows-v"></i>&nbsp;Height</label>
+        <input type="number" id="node-input-height" style="width:125px !important">
+        &nbsp;&nbsp;<i class="fa fa-arrows-h"></i>&nbsp;Width</label>
+        <input type="number" id="node-input-width" style="width:125px !important">
+    </div>
+    <div class="form-row">
+        <label for="node-input-points"><i class="fa fa-line-chart"></i> Line points</label>
+        <input type="number" id="node-input-points">
+    </div>
+    <div class="form-row">
+        <label for="node-input-chartType"><i class="fa fa-bar-chart"></i> Chart type</label>
+        <select id="node-input-chartType" style="width:200px;">
+            <option value="line">Line Chart</option>
+            <option value="bar">Bar Chart</option>
+        </select>
+    </div>
+    <div class="form-row">
+        <label for="node-input-fillColor"><i class="fa fa-paint-brush"></i> Fill color</label>
+        <input type="color" id="node-input-fillColor" style="width:60px;">
+    </div>
+    <div class="form-row">
+        <label for="node-input-strokeColor"><i class="fa fa-pencil"></i> Stroke color</label>
+        <input type="color" id="node-input-strokeColor" style="width:60px;">
+    </div>
+    <div class="form-row">
+        <label>&nbsp;</label>
+        <input type="checkbox" id="node-input-hide" style="display:inline-block; width:auto; vertical-align:top;">
+        <label for="node-input-hide" style="width:70%;"> Hide chart on deactivate</label>
+    </div> 
+    <div class="form-row">
+        <label>&nbsp;</label>
+        <input type="checkbox" id="node-input-passthru" style="display:inline-block; width:auto; vertical-align:top;">
+        <label for="node-input-passthru" style="width:70%;"> Allow data passthrough</label>
+    </div> 
+    <div class="form-row">
+        <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
+        <input type="text" id="node-input-name" placeholder="Name">
+    </div>
+</script>
+
+<script type="text/html" data-template-name="ccp-graph-view">
+    <div class="form-row">
+        <label style="padding-top: 8px" for="node-input-property"><i class="fa fa-ellipsis-h"></i> Property</label>
+        <input type="text" id="node-input-property" style="width:70%">
+        <input type="hidden" id="node-input-fieldType">
+    </div>
+    <div class="form-row">
+        <label for="node-input-height"><i class="fa fa-arrows-v"></i>&nbsp;Height</label>
+        <input type="number" id="node-input-height" style="width:125px !important">
+        &nbsp;&nbsp;<i class="fa fa-arrows-h"></i>&nbsp;Width</label>
+        <input type="number" id="node-input-width" style="width:125px !important">
+    </div>
+    <div class="form-row">
+        <label for="node-input-fillColor"><i class="fa fa-paint-brush"></i> Node color</label>
+        <input type="color" id="node-input-fillColor" style="width:60px;">
+    </div>
+    <div class="form-row">
+        <label for="node-input-multiConnectColor"><i class="fa fa-sitemap"></i> Multi-connect color</label>
+        <input type="color" id="node-input-multiConnectColor" style="width:60px;">
+    </div>
+    <div class="form-row">
+        <label for="node-input-strokeColor"><i class="fa fa-pencil"></i> Edge color</label>
+        <input type="color" id="node-input-strokeColor" style="width:60px;">
+    </div>
+    <div class="form-row">
+        <label for="node-input-backgroundColor"><i class="fa fa-square"></i> Background color</label>
+        <input type="color" id="node-input-backgroundColor" style="width:60px;">
+    </div>
+    <div class="form-row">
+        <label>&nbsp;</label>
+        <input type="checkbox" id="node-input-hide" style="display:inline-block; width:auto; vertical-align:top;">
+        <label for="node-input-hide" style="width:70%;"> Hide graph on deactivate</label>
+    </div> 
+    <div class="form-row">
+        <label>&nbsp;</label>
+        <input type="checkbox" id="node-input-passthru" style="display:inline-block; width:auto; vertical-align:top;">
+        <label for="node-input-passthru" style="width:70%;"> Allow data passthrough</label>
+    </div> 
+    <div class="form-row">
+        <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
+        <input type="text" id="node-input-name" placeholder="Name">
+    </div>
+</script>
+
+<script type="text/html" data-help-name="ccp-data-view">
+    <p>Simple chart node useful for previewing data over time right in the flow.
+    The node expects the chosen message property, <code>msg.payload</code> by default,
+    to be a number to plot.  The node will then draw a chart containing values 
+    received over time in the flow.  To clear the graph, send an empty or null payload.
+    <p><strong>Chart type:</strong><br/>
+    Select between Line Chart (connects data points with lines) and Bar Chart (displays data as vertical bars).</p>
+    <p><strong>Height:</strong><br/>
+    The height (in pixels) of the chart.</p>  
+    <p><strong>Width:</strong><br/>
+    The width (in pixels) of the chart.</p>
+    <p><strong>Line points:</strong><br/>
+    The number of points to display in the chart before they are dropped.</p>
+    <p><strong>Fill color:</strong><br/>
+    The fill color for chart elements (bars or line area).</p>
+    <p><strong>Stroke color:</strong><br/>
+    The outline/border color for chart elements.</p>          
+    <p><strong>Hide chart on deactivate:</strong><br/>
+    Hide the chart when node is deactivated.</p>
+    <p><strong>Allow data passthrough:</strong><br/>
+    When selected this adds an output wire to the node in order to pass the original message through to a following node.
+    This performs better than forking the wires, however it does remove the enable/disable button.
+    </p>
+</script>
+
+<script type="text/html" data-help-name="ccp-graph-view">
+    <p>Network graph node useful for visualizing connected data structures right in the flow.
+    The node expects the chosen message property, <code>msg.payload</code> by default,
+    to contain graph data with nodes and edges. The node will then render a force-directed graph 
+    displaying the network structure in the flow. To clear the graph, send an empty or null payload.
+    
+    <p><strong>Expected Data Format:</strong><br/>
+    The input should be an object with <code>nodes</code> and <code>links</code> arrays:
+    <pre>{
+  "nodes": [
+    {"id": "node1", "name": "Node 1"},
+    {"id": "node2", "name": "Node 2"}
+  ],
+  "links": [
+    {"source": 0, "target": 1}
+  ]
+}</pre>
+    </p>
+    
+    <p><strong>Height:</strong><br/>
+    The height (in pixels) of the graph.</p>  
+    <p><strong>Width:</strong><br/>
+    The width (in pixels) of the graph.</p>
+    <p><strong>Node color:</strong><br/>
+    The fill color for graph nodes with one or no connections.</p>
+    <p><strong>Multi-connect color:</strong><br/>
+    The fill color for graph nodes with more than one connection (hub nodes).</p>
+    <p><strong>Edge color:</strong><br/>
+    The color for graph edges/links.</p>
+    <p><strong>Background color:</strong><br/>
+    The background color for the graph visualization area.</p>          
+    <p><strong>Hide graph on deactivate:</strong><br/>
+    Hide the graph when node is deactivated.</p>
+    <p><strong>Allow data passthrough:</strong><br/>
+    When selected this adds an output wire to the node in order to pass the original message through to a following node.
+    This performs better than forking the wires, however it does remove the enable/disable button.
+    </p>
+</script>
