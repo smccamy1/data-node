@@ -492,7 +492,6 @@
 
         // Graph rendering function for ccp-graph-view
         var renderGraph = function (id, data, node) {
-            console.log('renderGraph called with id:', id, 'data:', data, 'node:', node);
             let $graph = document.getElementById("graph-view-output-graph-" + id);
             let graphWidth = node.width ? parseInt(node.width) : DEFAULT_CHART_WIDTH;
             let graphHeight = node.height ? parseInt(node.height) : DEFAULT_CHART_HEIGHT;
@@ -501,24 +500,16 @@
             let force, linkGroup, nodeGroup, previousNodeData = [], previousLinkData = [];
 
             function updateGraph(graphData) {
-                console.log('updateGraph called with:', graphData);
-                if (!graphData) {
-                    console.log('No graph data provided');
-                    return;
-                }
+                if (!graphData) return;
                 
                 // Handle empty data (for clearing the graph)
                 const nodeData = graphData.nodes || [];
                 const linkData = graphData.links || [];
-                
-                console.log('Node data:', nodeData);
-                console.log('Link data:', linkData);
 
                 // If no data, clear the graph
                 if (nodeData.length === 0 && linkData.length === 0) {
                     if (linkGroup) linkGroup.selectAll(".link").remove();
                     if (nodeGroup) nodeGroup.selectAll(".node").remove();
-                    console.log('Cleared graph - no data');
                     return;
                 }
 
@@ -578,8 +569,6 @@
                         newNode.y = prevNode.y;
                         newNode.px = prevNode.px;
                         newNode.py = prevNode.py;
-                        // Make existing nodes fixed to prevent unwanted movement
-                        newNode.fixed = true;
                     }
                 });
 
@@ -622,32 +611,13 @@
                         .style("stroke", node.strokeColor || '#999999')
                         .style("stroke-width", 2)
                         .style("opacity", 0)
-                        .call(force.drag)
-                        .on('mousedown', function(d) {
-                            // When dragging starts, unfix the node to allow manual positioning
-                            d.fixed = false;
-                        })
-                        .on('dragstart', function(d) {
-                            // Prevent force layout from moving this node during drag
-                            d3.event.sourceEvent.stopPropagation();
-                            d.fixed = true;
-                        })
-                        .on('dragend', function(d) {
-                            // Keep the node fixed after dragging ends
-                            d.fixed = true;
-                        });
+                        .call(force.drag);
 
                     // Animate new nodes in
                     newNodes.transition()
                         .duration(300)
                         .attr("r", 8)
-                        .style("opacity", 1)
-                        .each('end', function(d) {
-                            // After animation, allow new nodes to settle briefly, then fix them
-                            setTimeout(() => {
-                                d.fixed = true;
-                            }, 1000);
-                        });
+                        .style("opacity", 1);
 
                     // Update all nodes (both new and existing) with connection-based colors
                     nodeGroup.selectAll(".node")
@@ -672,47 +642,14 @@
                     previousNodeData = nodeData.map(node => ({ ...node }));
                     previousLinkData = linkData.map(link => ({ ...link }));
 
-                    // Only restart force if there are new nodes or links
-                    const hasNewNodes = nodeData.some((node, i) => {
-                        const key = node.id || i;
-                        return !prevNodeMap.has(key);
-                    });
-                    
-                    const hasNewLinks = linkData.some((link, i) => {
-                        const key = `${link.source}-${link.target}`;
-                        return !prevLinkMap.has(key);
-                    });
-
-                    if (hasNewNodes || hasNewLinks) {
-                        // Temporarily unfix new nodes to allow them to find good positions
-                        nodeData.forEach((d, i) => {
-                            const key = d.id || i;
-                            if (!prevNodeMap.has(key)) {
-                                d.fixed = false;
-                            }
-                        });
-                        
-                        force.start();
-                        console.log('Force layout restarted for new elements');
-                        
-                        // After a short time, fix the new nodes too
-                        setTimeout(() => {
-                            nodeData.forEach(d => {
-                                d.fixed = true;
-                            });
-                            force.stop();
-                        }, 2000);
-                    } else {
-                        console.log('No new elements, skipping force restart');
-                    }
+                    // Restart force simulation
+                    force.start();
                 }
             }
 
             if (!$graph) {
-                console.log('Creating new graph for id:', id);
                 const $container = document.getElementById(id)
                 if (!$container) { 
-                    console.log('Container not found for id:', id);
                     return 
                 }
 
@@ -803,7 +740,6 @@
 
                 $graph = graphGroup;
                 graphInfo[id] = { force, updateGraph, linkGroup, nodeGroup };
-                console.log('Graph info stored for id:', id);
 
                 // Update the graph with initial data
                 if (data) {
@@ -811,12 +747,8 @@
                 }
             } else {
                 // updating existing graph
-                console.log('Updating existing graph with id:', id);
                 if (graphInfo[id] && graphInfo[id].updateGraph) {
-                    console.log('Calling updateGraph for existing graph');
                     graphInfo[id].updateGraph(data);
-                } else {
-                    console.log('No updateGraph function found for id:', id);
                 }
             }
         }
@@ -861,24 +793,17 @@
 
         // Subscribe to graph-view data
         RED.comms.subscribe('graph-view', function (event, data) {
-            console.log('Graph view data received:', data);
             if (data.hasOwnProperty("data")) {
                 let node = RED.nodes.node(data.id);
-                if (!node) {
-                    console.log('Node not found:', data.id);
-                    return;
-                }
+                if (!node) return;
 
                 if (data.data && data.data.nodes) {
-                    console.log('Valid graph data, rendering:', data.data);
                     graphData[data.id] = data.data;
                     renderGraph(data.id, data.data, node);
                 } else {
-                    console.log('Invalid graph data structure, resetting');
                     resetGraph(data.id);
                 }
             } else {
-                console.log('No data property, resetting graph');
                 resetGraph(data.id);
             }
         })
